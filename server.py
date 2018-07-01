@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+import threading
+
+from pyppeteer import launch
 from quart import Quart, Response, request
 
 # those imports are for testing purposes:
@@ -28,21 +32,24 @@ def shutdown():
     return 'Server shutting down...'
 
 
-@app.route('/')
-def index():
-    return '''<!DOCTYPE HTML><html><body>
-        <form action="/gen_composition" method="post">
-        <p>Characters: <input type="text" name="chars" value="齾"/></p>
-        <input type="submit" value="Generate composition">
-        </form>
-
-        <form action="/gen_strokes" method="post">
-        <p>Characters: <input type="text" name="chars" value="你好"/></p>
-        <p>Size: <input type="text" name="size" value="10"/></p>
-        <p>Number of repetitions: <input type="text" name="nr" value="3"/></p>
-        <input type="submit" value="Generate strokes">
-    </form>
-    '''
+@app.route('/html2pdf', methods=['POST'])
+async def html2pdf():
+    pdf_args = await request.form
+    url = pdf_args.pop('url')
+    # this lets us work without CAP_SYS_ADMIN:
+    options = {'args': ['--no-sandbox']}
+    # HACK: we're disabling signals because they fail in system tests
+    if threading.currentThread() != threading._main_thread:
+        options.update({'handleSIGINT': False, 'handleSIGHUP': False,
+                        'handleSIGTERM': False})
+    browser = await launch(**options)
+    try:
+        page = await browser.newPage()
+        await page.goto(url)
+        pdf = await page.pdf(**pdf_args)
+        return Response(pdf, mimetype='application/pdf')
+    finally:
+        await browser.close()
 
 
 class SystemTest(unittest.TestCase):
@@ -61,5 +68,6 @@ class SystemTest(unittest.TestCase):
         return 'http://localhost:5000'
 
     def test_server_is_up_and_running(self):
-        response = requests.get(self.get_server_url())
+        args = {'url': 'about:blank'}
+        response = requests.post(self.get_server_url() + '/html2pdf', args)
         self.assertEqual(response.status_code, 200)

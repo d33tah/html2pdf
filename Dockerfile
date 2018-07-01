@@ -24,15 +24,24 @@ RUN apt-get update && apt-get install -y fonts-noto-cjk locales && apt-get clean
 
 USER chrome
 RUN python3 -c '__import__("pyppeteer.chromium_downloader").chromium_downloader.download_chromium()'
-ADD ./server.py /tmp/server.py
+
+USER root
+RUN locale-gen en_US.UTF-8
+USER chrome
+ENV LC_ALL=en_US.UTF-8
 
 ADD ./requirements.txt /tmp
 RUN pip3 install -r /tmp/requirements.txt
 
-FROM pyppeteer_installed as test
+ADD ./server.py /tmp/server.py
 
-RUN pip3 install nose
+FROM pyppeteer_installed as test
+ADD ./requirements-dev.txt /tmp
+RUN pip3 install -r /tmp/requirements-dev.txt
+RUN python3 -m flake8 /tmp/server.py
 RUN python3 -m nose /tmp/server.py
 
 FROM pyppeteer_installed
-ENTRYPOINT ["python3", "server.py"]
+ENV QUART_APP=/tmp/server.py
+EXPOSE 5000
+CMD ["python3", "-m", "quart", "run", "-h", "0.0.0.0"]
