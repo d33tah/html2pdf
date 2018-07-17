@@ -1,3 +1,4 @@
 quart
 pyppeteer
 requests
+async_generator

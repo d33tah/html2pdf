@@ -5,6 +5,7 @@ import threading
 
 from pyppeteer import launch
 from quart import Quart, Response, request
+from async_generator import asynccontextmanager
 
 # those imports are for testing purposes:
 import asyncio
@@ -32,10 +33,8 @@ def shutdown():
     return 'Server shutting down...'
 
 
-@app.route('/html2pdf', methods=['POST'])
-async def html2pdf():
-    pdf_args = await request.form
-    url = pdf_args.pop('url')
+@asynccontextmanager
+async def visit_page(url):
     # this lets us work without CAP_SYS_ADMIN:
     options = {'args': ['--no-sandbox']}
     # HACK: we're disabling signals because they fail in system tests
@@ -46,10 +45,28 @@ async def html2pdf():
     try:
         page = await browser.newPage()
         await page.goto(url)
-        pdf = await page.pdf(**pdf_args)
-        return Response(pdf, mimetype='application/pdf')
+        yield page
     finally:
         await browser.close()
+
+
+@app.route('/html2pdf', methods=['POST'])
+async def html2pdf():
+    call_args = await request.form
+    url = call_args.pop('url')
+    async with visit_page(url) as page:
+        pdf = await page.pdf(**call_args)
+        return Response(pdf, mimetype='application/pdf')
+
+
+@app.route('/html2img', methods=['POST'])
+async def html2img():
+    call_args = await request.form
+    url = call_args.pop('url')
+    img_format = call_args.get('type', 'png')
+    async with visit_page(url) as page:
+        pdf = await page.screenshot(**call_args)
+        return Response(pdf, mimetype=('image/' + img_format))
 
 
 class SystemTest(unittest.TestCase):
@@ -67,7 +84,26 @@ class SystemTest(unittest.TestCase):
     def get_server_url(self):
         return 'http://localhost:5000'
 
-    def test_server_is_up_and_running(self):
+    def test_server_renders_about_blank_pdf(self):
         args = {'url': 'about:blank'}
         response = requests.post(self.get_server_url() + '/html2pdf', args)
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['content-type'], 'application/pdf')
+        expected = b'%PDF'
+        self.assertEqual(response.content[:len(expected)], expected)
+
+    def test_server_renders_about_blank_png(self):
+        args = {'url': 'about:blank'}
+        response = requests.post(self.get_server_url() + '/html2img', args)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['content-type'], 'image/png')
+        expected = b'\x89PNG\r\n\x1a\n\x00'
+        self.assertEqual(response.content[:len(expected)], expected)
+
+    def test_server_renders_about_blank_jpg(self):
+        args = {'url': 'about:blank', 'type': 'jpeg'}
+        response = requests.post(self.get_server_url() + '/html2img', args)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['content-type'], 'image/jpeg')
+        expected = b'\xff\xd8\xff\xe0\x00\x10JFIF'
+        self.assertEqual(response.content[:len(expected)], expected)

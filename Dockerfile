@@ -6,11 +6,11 @@ FROM ubuntu:18.04 as pyppeteer_installed
 #
 ###########################################################################
 
-RUN apt-get update && apt-get install -y python3-pip
+RUN apt-get update && apt-get install --no-install-recommends -y python3-pip python3-setuptools && apt-get clean
 
 RUN pip3 install pyppeteer
 
-RUN apt update && apt install -y libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+RUN apt update && apt install -y --no-install-recommends libasound2 libatk-bridge2.0-0 libatk1.0-0 \
     libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libgcc1 libgdk-pixbuf2.0-0 \
     libglib2.0-0 libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 \
     libpangocairo-1.0-0 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 \
@@ -20,7 +20,7 @@ RUN apt update && apt install -y libasound2 libatk-bridge2.0-0 libatk1.0-0 \
 RUN groupadd chrome && useradd -g chrome -s /bin/bash -G audio,video chrome \
     && mkdir -p /home/chrome && chown -R chrome:chrome /home/chrome
 
-RUN apt-get update && apt-get install -y fonts-noto-cjk locales && apt-get clean
+RUN apt-get update && apt-get install -y fonts-noto-cjk locales dumb-init && apt-get clean
 
 USER chrome
 RUN python3 -c '__import__("pyppeteer.chromium_downloader").chromium_downloader.download_chromium()'
@@ -44,4 +44,5 @@ RUN python3 -m nose /tmp/server.py
 FROM pyppeteer_installed
 ENV QUART_APP=/tmp/server.py
 EXPOSE 5000
+ENTRYPOINT ["/usr/bin/dumb-init", "--verbose", "--rewrite", "2:3", "--"]
 CMD ["python3", "-m", "quart", "run", "-h", "0.0.0.0"]
