@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     python3-pip python3-setuptools && apt-get clean
 
 RUN locale-gen en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 USER chrome
 
